@@ -1,0 +1,2 @@
+# splitwise
+Dashboard for spending
