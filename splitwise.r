@@ -2,19 +2,21 @@ library(reshape2)
 library(lubridate)
 library(ggplot2)
 library(shiny)
+library(jsonlite)
+library(curl)
 
 rm(list=ls())
-
-setwd("C:/Users/atulm/RCode/Splitwise")
-
 
 
 #shiny
 shinyServer<-function(input,output,session){
   #read data
-  mydata<-reactive({
-    
-    origDF = read.csv("expenses.csv",as.is = T)
+  rv<-reactiveValues(data=NULL,dateAdjustedData=NULL,categoryAdjustedData=NULL,groupAdjustedData=NULL)
+  
+  #
+  observeEvent(input$load,{
+    origDF <- fromJSON("http://localhost:9093/getStoredJson")
+    origDF <- origDF[-1,]
     
     #remove na
     origDF<-origDF[!(is.na(origDF$Date)),]
@@ -22,7 +24,7 @@ shinyServer<-function(input,output,session){
     
     #structure
     origDF$Date<-as.POSIXct(origDF$Date)
-    origDF$Category<-as.factor(origDF$Category)
+    #origDF$Category<-as.factor(origDF$Category)
     origDF$Group<-as.factor(origDF$Group)
     
     #allGroupDF
@@ -37,73 +39,99 @@ shinyServer<-function(input,output,session){
     #remove total balance and cost as double
     allGroupDF$Cost<-as.double(allGroupDF$Cost)
     allGroupDF$Share<-as.double(allGroupDF$Share)
-    return(allGroupDF)
+    rv$data<-allGroupDF
   })
   
-  output$dateRangeText2<-renderText({
-    paste(input$dateRange[1],input$dateRange[2])
-    
-  })
   
-  inputCategory<-reactive({
-    data=mydata()
-    levels(data$Category)
-    
-  })
   
-  inputGroup<-reactive({
-    data=mydata()
-    levels(data$Group)
-    
-  })
   
-  observeEvent(mydata(),{
-    updateCheckboxGroupInput(session, "category", choices = inputCategory())
+  
+  observeEvent(rv$data,{
     updateCheckboxGroupInput(session, "group", choices = inputGroup())
   })
   
+  inputGroup<-reactive({
+    data=rv$data
+    levels(data$Group)
+    
+  }) 
+  
+  
+  
+  dateAdjustedLoad<-reactive({
+    data=rv$data
+    if(is.null(input$group)) return(NULL)
+    groupAdjustedData<-data[data$Group %in% input$group,]
+    #output$groupAdjustedTable <- renderTable(groupAdjustedData)
+    
+    rv$groupAdjustedDF<-groupAdjustedData
+    
+    
+    data<- rv$groupAdjustedDF
+    if(is.null(input$dateRange[1]) || is.null(input$dateRange[2])) return(NULL)
+    data<-data[data$Date>=input$dateRange[1] & data$Date<=input$dateRange[2],]
+    rv$dateAdjustedData<-data
+    updateCheckboxGroupInput(session, "category", choices = inputCategory())
+    return(data)
+  })
+  
+  inputCategory<-reactive({
+    data=rv$dateAdjustedData
+    levels(as.factor(data$Category))
+    
+  })
+  
+  finalDataLoad<-reactive({
+    data=dateAdjustedLoad()
+    if(is.null(input$category)) return(NULL)
+    categoryAdjustedData<-data[data$Category %in% input$category,]
+    output$categoryAdjustedTable <- renderTable(categoryAdjustedData)
+    rv$categoryAdjustedDF<-categoryAdjustedData
+    
+    return(categoryAdjustedData)
+    
+    
+    
+    
+  })
   
   
   
   output$distPlot1<-renderPlot({
-    data=mydata()
+    subsetedData<-finalDataLoad()
+    if(is.null(subsetedData)) return(NULL)
+    subsetedData<-rv$dateAdjustedData
+    subsetedData$Category<-as.factor(subsetedData$Category)
+    subsetedData<-subsetedData[subsetedData$Category %in% input$category,]
+    if(nrow(subsetedData)==0) return(NULL)
     
-    startDate<-as.POSIXct(input$dateRange[1])
-    endDate<-as.POSIXct(input$dateRange[2])
-    if(is.null(input$category) || is.null(input$group)) return(NULL)
-    
-    data<-data[data$Date>=input$dateRange[1] & data$Date<=input$dateRange[2],]
+    subsetedData<-aggregate(Cost~Category,data=subsetedData,sum)
+    subsetedData$RevCost<-rev(subsetedData$Cost)
+    subsetedData$RevCum<-cumsum(subsetedData$RevCost)
     
     
+    subsetedData$Midpoint=(subsetedData$RevCum-subsetedData$RevCost)+(subsetedData$RevCost/2)
+    subsetedData$Labels=paste0(round((subsetedData$RevCost/sum(subsetedData$Cost))*100,1),"%")
     
-    catShareDF<-data[data$Category %in% input$category,]
-    catGroupShareDF<-catShareDF[catShareDF$Group %in% input$group,]
     
-    if(nrow(catGroupShareDF)==0) return(NULL)
+    ggplot(data=subsetedData, aes(x="",y=Cost, fill=factor(Category))) +
+      geom_bar(width=1,stat="identity")+
+      geom_text(aes(x=1.2,y=Midpoint,label=Labels),color="black",fontface="bold")+
+      coord_polar(theta = "y",start=0)
     
-    ggplot(data=catGroupShareDF, aes(x="", y=Cost, fill=factor(Category))) +
-      geom_bar(stat="identity",width=1)+
-      coord_polar(theta = "y",start = 0)
   })
   
+  
+  
   output$distPlot2<-renderPlot({
-    data=mydata()
+    subsetedData<-rv$dateAdjustedData
+    if(is.null(subsetedData)) return(NULL)
+    subsetedData$Category<-as.factor(subsetedData$Category)
+    subsetedData<-subsetedData[subsetedData$Category %in% input$category,]
+    if(nrow(subsetedData)==0) return(NULL)
     
-    startDate<-as.POSIXct(input$dateRange[1])
-    endDate<-as.POSIXct(input$dateRange[2])
-    data<-data[data$Date>=input$dateRange[1] & data$Date<=input$dateRange[2],]
-    
-    if(is.null(input$category) || is.null(input$group)) return(NULL)
-    
-    catShareDF<-data[data$Category %in% input$category,]
-    catGroupShareDF<-catShareDF[catShareDF$Group %in% input$group,]
-    if(nrow(catGroupShareDF)==0) return(NULL)
-    
-    monthlyShareDF<-aggregate(catGroupShareDF$Share,by=list(catGroupShareDF$Category,catGroupShareDF$month),FUN = sum)
+    monthlyShareDF<-aggregate(subsetedData$Share,by=list(subsetedData$Category,subsetedData$month),FUN = sum)
     colnames(monthlyShareDF)<-c("Category","Month","Share")
-    
-    if(nrow(monthlyShareDF)==0) return(NULL)
-    
     
     ggplot(data=monthlyShareDF, aes(x=Month, y=Share, fill=Category)) +
       geom_bar(colour="black", stat="identity")+
@@ -120,6 +148,7 @@ shinyUI<-fluidPage(
     
     # Sidebar with a slider input for number of observations
     sidebarPanel(
+      actionButton("load", "Load/Refresh"),
       dateRangeInput('dateRange',
                      label = 'Select start and end date',
                      start = Sys.Date() - 2, end = Sys.Date()
@@ -132,7 +161,10 @@ shinyUI<-fluidPage(
     # Show a plot of the generated distribution
     mainPanel(
       plotOutput("distPlot1"),
-      plotOutput("distPlot2")
+      plotOutput("distPlot2"),
+      tableOutput("groupAdjustedTable"),
+      tableOutput("categoryAdjustedTable"),
+      tableOutput("dateAdjustedTable")
       
     )
   ),
