@@ -13,42 +13,38 @@ shinyServer<-function(input,output,session){
   #read data
   rv<-reactiveValues(data=NULL,dateAdjustedData=NULL,categoryAdjustedData=NULL,groupAdjustedData=NULL)
   
-  #
+  #on clicking load
   observeEvent(input$load,{
-    origDF <- fromJSON("http://localhost:9093/getStoredJson")
-    origDF <- origDF[-1,]
-    
-    #remove na
-    origDF<-origDF[!(is.na(origDF$Date)),]
-    origDF<-origDF[!(origDF$Description=="Total balance"),]
-    
-    #structure
-    origDF$Date<-as.POSIXct(origDF$Date)
-    #origDF$Category<-as.factor(origDF$Category)
-    origDF$Group<-as.factor(origDF$Group)
-    
-    #allGroupDF
-    #drop currency
-    allGroupDF<-origDF[,!(names(origDF) %in% c("X"))]
-    
-    #add month and year
-    allGroupDF$year<-year(allGroupDF$Date)
-    allGroupDF$month<-month(allGroupDF$Date)
-    allGroupDF$day<-day(allGroupDF$Date)
-    
-    #remove total balance and cost as double
-    allGroupDF$Cost<-as.double(allGroupDF$Cost)
-    allGroupDF$Share<-as.double(allGroupDF$Share)
-    rv$data<-allGroupDF
-  })
+      origDF <- fromJSON("http://localhost:9093/getStoredJson")
+      origDF <- origDF[-1,]
+      
+      #remove na
+      origDF<-origDF[!(is.na(origDF$Date)),]
+      origDF<-origDF[!(origDF$Description=="Total balance"),]
+      
+      #structure
+      origDF$Date<-as.POSIXct(origDF$Date)
+      #origDF$Category<-as.factor(origDF$Category)
+      origDF$Group<-as.factor(origDF$Group)
+      
+      #allGroupDF
+      #drop currency
+      allGroupDF<-origDF[,!(names(origDF) %in% c("X"))]
+      
+      #add month and year
+      allGroupDF$year<-year(allGroupDF$Date)
+      allGroupDF$month<-month(allGroupDF$Date)
+      allGroupDF$day<-day(allGroupDF$Date)
+      
+      #remove total balance and cost as double
+      allGroupDF$Cost<-as.double(allGroupDF$Cost)
+      allGroupDF$Share<-as.double(allGroupDF$Share)
+      rv$data<-allGroupDF
+      
+      #update group checkboxes
+      updateCheckboxGroupInput(session, "group", choices = inputGroup())
+    })
   
-  
-  
-  
-  
-  observeEvent(rv$data,{
-    updateCheckboxGroupInput(session, "group", choices = inputGroup())
-  })
   
   inputGroup<-reactive({
     data=rv$data
@@ -56,22 +52,36 @@ shinyServer<-function(input,output,session){
     
   }) 
   
+
   
-  
-  dateAdjustedLoad<-reactive({
+  observeEvent(input$group,{
     data=rv$data
     if(is.null(input$group)) return(NULL)
     groupAdjustedData<-data[data$Group %in% input$group,]
-    #output$groupAdjustedTable <- renderTable(groupAdjustedData)
+    
     
     rv$groupAdjustedDF<-groupAdjustedData
+  
     
+    dateAdjustedLoad()
+    
+    #update category checkboxes
+    updateCheckboxGroupInput(session, "category", choices = inputCategory())
+  })
+  
+  observeEvent(input$dateRange,{
+    dateAdjustedLoad()
+  })
+  dateAdjustedLoad<-reactive({
+    if(is.null(input$dateRange[1]) || is.null(input$dateRange[2])) return(NULL)
     
     data<- rv$groupAdjustedDF
-    if(is.null(input$dateRange[1]) || is.null(input$dateRange[2])) return(NULL)
     data<-data[data$Date>=input$dateRange[1] & data$Date<=input$dateRange[2],]
     rv$dateAdjustedData<-data
+    
+    #update category checkboxes
     updateCheckboxGroupInput(session, "category", choices = inputCategory())
+    
     return(data)
   })
   
@@ -81,24 +91,21 @@ shinyServer<-function(input,output,session){
     
   })
   
-  finalDataLoad<-reactive({
-    data=dateAdjustedLoad()
+   observeEvent(input$category,{
+    data=rv$dateAdjustedData
     if(is.null(input$category)) return(NULL)
+    
     categoryAdjustedData<-data[data$Category %in% input$category,]
     output$categoryAdjustedTable <- renderTable(categoryAdjustedData)
     rv$categoryAdjustedDF<-categoryAdjustedData
     
-    return(categoryAdjustedData)
-    
-    
-    
     
   })
-  
-  
+    
+
   
   output$distPlot1<-renderPlot({
-    subsetedData<-finalDataLoad()
+    subsetedData<-rv$categoryAdjustedDF
     if(is.null(subsetedData)) return(NULL)
     subsetedData<-rv$dateAdjustedData
     subsetedData$Category<-as.factor(subsetedData$Category)
@@ -108,7 +115,7 @@ shinyServer<-function(input,output,session){
     subsetedData<-aggregate(Cost~Category,data=subsetedData,sum)
     subsetedData$RevCost<-rev(subsetedData$Cost)
     subsetedData$RevCum<-cumsum(subsetedData$RevCost)
-    
+
     
     subsetedData$Midpoint=(subsetedData$RevCum-subsetedData$RevCost)+(subsetedData$RevCost/2)
     subsetedData$Labels=paste0(round((subsetedData$RevCost/sum(subsetedData$Cost))*100,1),"%")
@@ -118,7 +125,7 @@ shinyServer<-function(input,output,session){
       geom_bar(width=1,stat="identity")+
       geom_text(aes(x=1.2,y=Midpoint,label=Labels),color="black",fontface="bold")+
       coord_polar(theta = "y",start=0)
-    
+      
   })
   
   
@@ -162,9 +169,7 @@ shinyUI<-fluidPage(
     mainPanel(
       plotOutput("distPlot1"),
       plotOutput("distPlot2"),
-      tableOutput("groupAdjustedTable"),
-      tableOutput("categoryAdjustedTable"),
-      tableOutput("dateAdjustedTable")
+      tableOutput("categoryAdjustedTable")
       
     )
   ),
