@@ -11,11 +11,17 @@ rm(list=ls())
 #shiny
 shinyServer<-function(input,output,session){
   #read data
-  rv<-reactiveValues(data=NULL,dateAdjustedData=NULL,categoryAdjustedData=NULL,groupAdjustedData=NULL)
+  rv<-reactiveValues(data=NULL,dateAdjustedData=NULL,categoryAdjustedData=NULL,groupAdjustedData=NULL,urlFile="")
   
+  observe({
+    query <- parseQueryString(session$clientData$url_search)
+    if (!is.null(query[['file']])) {
+      rv$urlFile<-(query[['file']])
+    }
+  })
   #on clicking load
   observeEvent(input$load,{
-      origDF <- fromJSON("http://localhost:9093/getStoredJson")
+      origDF <- fromJSON(paste0("http://localhost:9093/getStoredJsonFile?file=",rv$urlFile))
       origDF <- origDF[-1,]
       
       #remove na
