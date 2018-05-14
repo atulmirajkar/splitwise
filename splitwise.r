@@ -111,23 +111,23 @@ shinyServer<-function(input,output,session){
 
   
   output$distPlot1<-renderPlot({
-    subsetedData<-rv$categoryAdjustedDF
-    if(is.null(subsetedData)) return(NULL)
     subsetedData<-rv$dateAdjustedData
+    if(is.null(subsetedData)) return(NULL)
+    
     subsetedData$Category<-as.factor(subsetedData$Category)
     subsetedData<-subsetedData[subsetedData$Category %in% input$category,]
     if(nrow(subsetedData)==0) return(NULL)
     
-    subsetedData<-aggregate(Cost~Category,data=subsetedData,sum)
-    subsetedData$RevCost<-rev(subsetedData$Cost)
+    subsetedData<-aggregate(Share~Category,data=subsetedData,sum)
+    subsetedData$RevCost<-rev(subsetedData$Share)
     subsetedData$RevCum<-cumsum(subsetedData$RevCost)
 
     
     subsetedData$Midpoint=(subsetedData$RevCum-subsetedData$RevCost)+(subsetedData$RevCost/2)
-    subsetedData$Labels=paste0(round((subsetedData$RevCost/sum(subsetedData$Cost))*100,1),"%")
+    subsetedData$Labels=paste0(round((subsetedData$RevCost/sum(subsetedData$Share))*100,1),"%")
     
     
-    ggplot(data=subsetedData, aes(x="",y=Cost, fill=factor(Category))) +
+    ggplot(data=subsetedData, aes(x="",y=Share, fill=factor(Category))) +
       geom_bar(width=1,stat="identity")+
       geom_text(aes(x=1.2,y=Midpoint,label=Labels),color="black",fontface="bold")+
       coord_polar(theta = "y",start=0)
