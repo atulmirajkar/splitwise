@@ -102,7 +102,9 @@ shinyServer<-function(input,output,session){
     if(is.null(input$category)) return(NULL)
     
     categoryAdjustedData<-data[data$Category %in% input$category,]
-    output$categoryAdjustedTable <- renderTable(categoryAdjustedData)
+    drillData<-categoryAdjustedData[,names(categoryAdjustedData) %in% c("month","day","Description","Category","Share")]
+    
+    output$categoryAdjustedTable <- renderTable(drillData)
     rv$categoryAdjustedDF<-categoryAdjustedData
     
     
@@ -127,10 +129,17 @@ shinyServer<-function(input,output,session){
     subsetedData$Labels=paste0(round((subsetedData$RevCost/sum(subsetedData$Share))*100,1),"%")
     
     
-    ggplot(data=subsetedData, aes(x="",y=Share, fill=factor(Category))) +
-      geom_bar(width=1,stat="identity")+
+    ggplot(data=subsetedData, aes(x="Percent",y=Share, fill=factor(Category))) +
+      geom_bar(width=1,stat="identity",color='black')+
       geom_text(aes(x=1.2,y=Midpoint,label=Labels),color="black",fontface="bold")+
-      coord_polar(theta = "y",start=0)
+      coord_polar(theta = "y",start=0)+
+      theme(axis.ticks=element_blank(),  # the axis ticks
+            axis.title=element_blank(),  # the axis labels
+            axis.text.y=element_blank())+ # the 0.75, 1.00, 1.25 labels.
+      scale_y_continuous(
+        breaks=subsetedData$Midpoint,   # where to place the labels
+        labels=subsetedData$RevCost # the labels
+      )
       
   })
   
@@ -146,42 +155,47 @@ shinyServer<-function(input,output,session){
     monthlyShareDF<-aggregate(subsetedData$Share,by=list(subsetedData$Category,subsetedData$month),FUN = sum)
     colnames(monthlyShareDF)<-c("Category","Month","Share")
     
-    ggplot(data=monthlyShareDF, aes(x=Month, y=Share, fill=Category)) +
+    monthlyShareDF$Month<-as.factor(monthlyShareDF$Month)
+    monthlyShareDF$Category<-as.factor(monthlyShareDF$Category)
+    
+    monthlyShareDF$labelPos<-ave(monthlyShareDF$Share,monthlyShareDF$Month,FUN=cumsum)
+    monthlyShareDF$Category<-factor(monthlyShareDF$Category,levels = rev(levels(monthlyShareDF$Category)))
+    
+    
+    ggplot(data=monthlyShareDF, aes(x=Month, y=Share, fill=Category,width=.5)) +
       geom_bar(colour="black", stat="identity")+
-      scale_x_continuous(breaks = seq(1,12,by=1))
+      geom_text(aes(y=labelPos, label=Share), vjust=1.6, color="white", size=3.5)
     
   })
 }
 
 shinyUI<-fluidPage(
-  pageWithSidebar(
+ 
     
     # Application title
     headerPanel("Splitwise Analytics!"),
-    
-    # Sidebar with a slider input for number of observations
-    sidebarPanel(
-      actionButton("load", "Load/Refresh"),
-      dateRangeInput('dateRange',
-                     label = 'Select start and end date',
-                     start = Sys.Date() - 2, end = Sys.Date()
-      ),
-      checkboxGroupInput("category", "categorys to show:"),
-      
-      checkboxGroupInput("group", "groups to show:")
-    ),
-    
-    # Show a plot of the generated distribution
-    mainPanel(
-      plotOutput("distPlot1"),
-      plotOutput("distPlot2"),
-      tableOutput("categoryAdjustedTable")
-      
+    fluidRow(
+      column(4,
+             # Sidebar with a slider input for number of observations
+             
+               actionButton("load", "Load/Refresh"),
+               dateRangeInput('dateRange',
+                              label = 'Select start and end date',
+                              start = Sys.Date() - 2, end = Sys.Date()
+               ),
+               checkboxGroupInput("category", "categorys to show:"),
+               
+               checkboxGroupInput("group", "groups to show:")
+               
+             ),
+      column(4,
+             plotOutput("distPlot1")),
+      column(4,
+             plotOutput("distPlot2")),
+      fluidRow(offset=4,
+               tableOutput("categoryAdjustedTable"))
     )
-  ),
-  fluidPage(
-    tableOutput('table')
-  )
+
   
 )
 
