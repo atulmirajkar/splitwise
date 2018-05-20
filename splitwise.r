@@ -121,12 +121,12 @@ shinyServer<-function(input,output,session){
     if(nrow(subsetedData)==0) return(NULL)
     
     subsetedData<-aggregate(Share~Category,data=subsetedData,sum)
-    subsetedData$RevCost<-rev(subsetedData$Share)
-    subsetedData$RevCum<-cumsum(subsetedData$RevCost)
+    subsetedData$Category<-factor(subsetedData$Category,levels = rev(levels(subsetedData$Category)))
+    subsetedData$LabelPos<-cumsum(subsetedData$Share)
 
     
-    subsetedData$Midpoint=(subsetedData$RevCum-subsetedData$RevCost)+(subsetedData$RevCost/2)
-    subsetedData$Labels=paste0(round((subsetedData$RevCost/sum(subsetedData$Share))*100,1),"%")
+    subsetedData$Midpoint=(subsetedData$LabelPos-subsetedData$Share)+(subsetedData$Share/2)
+    subsetedData$Labels=paste0(round((subsetedData$Share/sum(subsetedData$Share))*100,1),"%")
     
     
     ggplot(data=subsetedData, aes(x="Percent",y=Share, fill=factor(Category))) +
@@ -138,7 +138,7 @@ shinyServer<-function(input,output,session){
             axis.text.y=element_blank())+ # the 0.75, 1.00, 1.25 labels.
       scale_y_continuous(
         breaks=subsetedData$Midpoint,   # where to place the labels
-        labels=subsetedData$RevCost # the labels
+        labels=paste0(subsetedData$Category,subsetedData$Share,sep = " ") # the labels
       )
       
   })
