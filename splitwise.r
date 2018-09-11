@@ -21,7 +21,7 @@ shinyServer<-function(input,output,session){
   })
   #on clicking load
   observeEvent(input$load,{
-      origDF <- fromJSON(paste0("http://localhost:9093/getStoredJsonFile?file=",rv$urlFile))
+      origDF <- fromJSON(paste0("http://backend:9093/getStoredJsonFile?file=",rv$urlFile))
       origDF <- origDF[-1,]
       
       #remove na
